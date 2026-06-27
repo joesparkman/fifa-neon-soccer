@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: FIFA Neon Soccer Game - Leaderboard Backend
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Timeout: 10
+Resources:
+  LeaderboardTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: FifaGameLeaderboard
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: pk
+        AttributeType: S
+      - AttributeName: sk
+        AttributeType: S
+      KeySchema:
+      - AttributeName: pk
+        KeyType: HASH
+      - AttributeName: sk
+        KeyType: RANGE
+  LeaderboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: fifa-leaderboard
+      Handler: lambda/leaderboard.handler
+      CodeUri: LeaderboardFunction
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: LeaderboardTable
+      Events:
+        GetLeaderboard:
+          Type: Api
+          Properties:
+            Path: /leaderboard
+            Method: GET
+        PostScore:
+          Type: Api
+          Properties:
+            Path: /leaderboard
+            Method: POST
+        Options:
+          Type: Api
+          Properties:
+            Path: /leaderboard
+            Method: OPTIONS
+    Metadata:
+      SamResourceId: LeaderboardFunction
+Outputs:
+  ApiUrl:
+    Description: Paste this into app.js as API_BASE
+    Value:
+      Fn::Sub: https://${ServerlessRestApi}.execute-api.us-east-1.amazonaws.com/Prod

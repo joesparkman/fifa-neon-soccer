@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>FIFA — Neon Soccer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <!-- Open Graph -->
+<meta property="og:title" content="FIFA Neon Soccer" />
+<meta property="og:description" content="A fast-paced neon soccer game with live leaderboard. Built on AWS." />
+<meta property="og:image" content="https://app.joesparkman.com/fifa/preview.png" />
+<meta property="og:url" content="https://app.joesparkman.com/fifa" />
+<meta property="og:type" content="website" />
+
+<!-- Twitter/X -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://app.joesparkman.com/fifa/preview.png" />
+<meta property="og:description" content="Fast-paced neon soccer game with live leaderboard. Built on AWS." />
+</head>
+<body>
+  <div id="game-wrap">
+    <div id="outer">
+
+      <div id="stat-top" class="stat-panel">
+        <div class="stat-col">
+          <div class="stat-name" style="color:#00d4ff">YOU</div>
+          <div class="stat-score" id="score-p" style="color:#00d4ff;text-shadow:0 0 20px #00d4ff">0</div>
+        </div>
+        <div class="stat-center">
+          <div class="stat-label">FIRST TO 7</div>
+          <div class="stat-divider-v"></div>
+          <div class="stat-label">WINS</div>
+        </div>
+        <div class="stat-col">
+          <div class="stat-name" style="color:#ff2d55">CPU</div>
+          <div class="stat-score" id="score-cpu" style="color:#ff2d55;text-shadow:0 0 20px #ff2d55">0</div>
+        </div>
+      </div>
+
+      <div id="arena">
+        <canvas id="c"></canvas>
+        <div id="mute-btn"></div>
+        <div id="ui">
+          <div id="ready-screen" class="screen on">
+            <div class="ready-inner">
+              <div class="ready-logo">FIFA<span>NEON</span></div>
+              <div class="ready-sub">SOCCER</div>
+              <div class="ready-prompt">TAP TO KICK OFF</div>
+              <div class="ready-keys">DRAG YOUR PLAYER · SCORE 7 TO WIN</div>
+            </div>
+          </div>
+          <div id="gameover-screen" class="screen">
+            <div class="go-inner">
+              <div class="go-face" id="go-face">😄</div>
+              <div class="go-who" id="go-who">YOU WIN</div>
+              <div class="go-wins" id="go-wins">GAME · SET · MATCH</div>
+              <div class="go-final" id="go-final">7 – 3</div>
+              <button id="btn-again">PLAY AGAIN</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="stat-bottom" class="stat-panel">
+        <div class="stat-row"><span class="stat-label">STREAK</span><span class="stat-val" id="stat-p-streak" style="color:#00d4ff">0</span><span class="stat-spacer"></span><span class="stat-val" id="stat-cpu-streak" style="color:#ff2d55">0</span><span class="stat-label">STREAK</span></div>
+        <div class="stat-row"><span class="stat-label">TOP SPD</span><span class="stat-val" id="stat-p-speed" style="color:#00d4ff">0</span><span class="stat-spacer"></span><span class="stat-val" id="stat-cpu-speed" style="color:#ff2d55">0</span><span class="stat-label">TOP SPD</span></div>
+        <div class="stat-row"><span class="stat-label">POWER</span><span class="stat-val" id="stat-p-power" style="color:#00d4ff">0</span><span class="stat-spacer"></span><span class="stat-val" id="stat-cpu-power" style="color:#ff2d55">0</span><span class="stat-label">POWER</span></div>
+      </div>
+
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
