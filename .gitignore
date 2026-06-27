@@ -1,0 +1,10 @@
+# Node
+**/node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+# AWS SAM build artifacts
+backend/.aws-sam/
+# OS
+.DS_Store
+Thumbs.db
