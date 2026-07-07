@@ -1,4 +1,22 @@
 const API_BASE = "https://4u8txpe5jh.execute-api.us-east-1.amazonaws.com/Prod";
+const DEFAULT_ASSET_BASE = window.location.protocol.startsWith("http") ? window.location.origin : "";
+const ASSET_BASE = window.APP_ASSET_BASE || DEFAULT_ASSET_BASE;
+const COGNITO = window.APP_COGNITO || {};
+const COGNITO_ENABLED = Boolean(COGNITO.domain && COGNITO.clientId);
+// When deploying, make sure your Lambda's ALLOWED_ORIGINS includes window.location.origin
+// so browser requests from the site are accepted by the leaderboard API.
+const APP_ORIGIN = window.location.origin;
+const EXPECTED_ORIGINS = [
+  "http://localhost:5500",
+  "https://app.joesparkman.com"
+];
+if (!EXPECTED_ORIGINS.includes(APP_ORIGIN)) {
+  console.warn(
+    "Current origin is not one of the expected allowed origins.\n" +
+    "Make sure your backend ALLOWED_ORIGINS includes:",
+    APP_ORIGIN
+  );
+}
 const CV = document.getElementById("c");
 const G = CV.getContext("2d");
 
@@ -15,9 +33,43 @@ const gameoverEl = document.getElementById("gameover-screen");
 const goWho     = document.getElementById("go-who");
 const goFinal   = document.getElementById("go-final");
 const goWinsEl  = document.getElementById("go-wins");
+const profileNameEl = document.getElementById("profile-name");
+const authStateEl = document.getElementById("auth-state");
+const profileStateEl = document.getElementById("profile-state");
+const profileBtn = document.getElementById("profile-btn");
+const authBtn = document.getElementById("auth-btn");
+const archBtn = document.getElementById("arch-btn");
+const archScreenEl = document.getElementById("arch-screen");
+const archCloseBtn = document.getElementById("arch-close");
 document.getElementById("btn-again").onclick = startGame;
-readyEl.addEventListener("click", () => { if (state === "title") startGame(); });
-CV.addEventListener("click", () => { if (state === "title") startGame(); });
+if (profileBtn) profileBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  editProfile();
+});
+if (authBtn) authBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (authState.status === "signed-in") signOut();
+  else startCognitoSignIn();
+});
+if (archBtn) archBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  showArchitecture();
+});
+if (archCloseBtn) archCloseBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  hideArchitecture();
+});
+if (archScreenEl) archScreenEl.addEventListener("click", (event) => {
+  if (event.target === archScreenEl) hideArchitecture();
+});
+readyEl.addEventListener("click", () => {
+  if (archScreenEl && archScreenEl.classList.contains("on")) return;
+  if (state === "title") startGame();
+});
+CV.addEventListener("click", () => {
+  if (archScreenEl && archScreenEl.classList.contains("on")) return;
+  if (state === "title") startGame();
+});
 
 const DOM = {
   scoreP:    document.getElementById("score-p"),
@@ -30,12 +82,338 @@ const DOM = {
   cpuPower:  document.getElementById("stat-cpu-power"),
 };
 
+const PROFILE_STORAGE_KEY = "fifa-neon-profile";
+const PROFILE_ID_STORAGE_KEY = "fifa-neon-profile-id";
+const SESSION_STORAGE_KEY = "fifa-neon-session";
+const PKCE_STORAGE_KEY = "fifa-neon-pkce";
+const guestProfile = loadProfile();
+const profile = { ...guestProfile, mode: "guest", email: "" };
+const sessionId = loadOrCreateId(SESSION_STORAGE_KEY, "sess");
+let matchId = createMatchId();
+let matchStartTime = 0;
+let matchEvents = [];
+let leaderboardSent = false;
+let telemetrySent = false;
+let remoteSoundLoad = null;
+const remoteSounds = {};
+const authState = { status: COGNITO_ENABLED ? "guest" : "unavailable", user: null, error: "" };
+updateProfileUI();
+
+function safeStorageGet(key) {
+  try { return localStorage.getItem(key); } catch (error) { return null; }
+}
+
+function safeStorageSet(key, value) {
+  try { localStorage.setItem(key, value); } catch (error) {}
+}
+
+function loadOrCreateId(key, prefix) {
+  const existing = safeStorageGet(key);
+  if (existing) return existing;
+  const next = `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+  safeStorageSet(key, next);
+  return next;
+}
+
+function createMatchId() {
+  return `match-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sanitizeProfileName(value) {
+  const trimmed = (value || "").trim().replace(/\s+/g, " ").slice(0, 20);
+  return trimmed || `Guest-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
+function loadProfile() {
+  const stored = safeStorageGet(PROFILE_STORAGE_KEY);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed && parsed.name) {
+        return {
+          id: parsed.id || loadOrCreateId(PROFILE_ID_STORAGE_KEY, "profile"),
+          name: sanitizeProfileName(parsed.name)
+        };
+      }
+    } catch (error) {}
+  }
+  return {
+    id: loadOrCreateId(PROFILE_ID_STORAGE_KEY, "profile"),
+    name: sanitizeProfileName("")
+  };
+}
+
+function saveProfile() {
+  safeStorageSet(PROFILE_STORAGE_KEY, JSON.stringify(guestProfile));
+  updateProfileUI();
+}
+
+function editProfile() {
+  const next = prompt("Enter your leaderboard name:", profile.name);
+  if (next === null) return;
+  profile.name = sanitizeProfileName(next);
+  if (profile.mode !== "signed-in") {
+    guestProfile.name = profile.name;
+    guestProfile.id = profile.id;
+    saveProfile();
+    return;
+  }
+  saveProfile();
+}
+
+function getAuthStatusLabel() {
+  if (!COGNITO_ENABLED) return "Cognito · not configured";
+  if (authState.status === "loading") return "Cognito · signing in";
+  if (authState.status === "signed-in") return `Cognito · ${profile.email || profile.name}`;
+  return "Cognito · guest mode";
+}
+
+function updateAuthProfileDisplay() {
+  if (authBtn) {
+    authBtn.textContent = authState.status === "signed-in" ? "SIGN OUT" : "SIGN IN WITH AWS";
+    authBtn.disabled = !COGNITO_ENABLED && authState.status !== "signed-in";
+  }
+  if (profileBtn) {
+    profileBtn.textContent = authState.status === "signed-in" ? "EDIT NAME" : "EDIT";
+  }
+}
+
+function updateProfileUI() {
+  if (profileNameEl) profileNameEl.textContent = profile.name;
+  if (authStateEl) {
+    authStateEl.textContent = authState.status === "signed-in" && profile.email
+      ? `Signed in as ${profile.email}`
+      : getAuthStatusLabel();
+  }
+  if (profileStateEl) {
+    const assetText = ASSET_BASE ? "cloud assets ready" : "cloud assets fallback";
+    profileStateEl.textContent = authState.status === "signed-in"
+      ? `Cognito profile · ${assetText}`
+      : `Guest profile · ${assetText}`;
+  }
+  updateAuthProfileDisplay();
+}
+
+function setGuestIdentity() {
+  profile.mode = "guest";
+  profile.id = guestProfile.id;
+  profile.name = guestProfile.name;
+  profile.email = "";
+  authState.status = COGNITO_ENABLED ? "guest" : "unavailable";
+  authState.user = null;
+  authState.error = "";
+  updateProfileUI();
+}
+
+function setCognitoIdentity(claims) {
+  profile.mode = "signed-in";
+  profile.id = claims.sub || profile.id;
+  profile.name = sanitizeProfileName(claims.preferred_username || claims.name || claims.email || profile.name);
+  profile.email = claims.email || "";
+  authState.status = "signed-in";
+  authState.user = claims;
+  authState.error = "";
+  updateProfileUI();
+}
+
+function safeSessionGet(key) {
+  try { return sessionStorage.getItem(key); } catch (error) { return null; }
+}
+
+function safeSessionSet(key, value) {
+  try { sessionStorage.setItem(key, value); } catch (error) {}
+}
+
+function safeSessionRemove(key) {
+  try { sessionStorage.removeItem(key); } catch (error) {}
+}
+
+function randomBase64Url(size = 32) {
+  const bytes = new Uint8Array(size);
+  crypto.getRandomValues(bytes);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function decodeBase64Url(input) {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "===".slice((normalized.length + 3) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function sha256Base64Url(value) {
+  const data = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  const bytes = new Uint8Array(hash);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function parseJwt(token) {
+  const parts = token.split(".");
+  if (parts.length < 2) return null;
+  try {
+    return JSON.parse(new TextDecoder().decode(decodeBase64Url(parts[1])));
+  } catch (error) {
+    return null;
+  }
+}
+
+function buildCognitoBaseUrl() {
+  return COGNITO_ENABLED ? COGNITO.domain.replace(/\/+$/, "") : "";
+}
+
+async function startCognitoSignIn() {
+  if (!COGNITO_ENABLED) {
+    authState.error = "Cognito is not configured for this build";
+    updateProfileUI();
+    return;
+  }
+  const verifier = randomBase64Url(64);
+  const state = randomBase64Url(16);
+  const challenge = await sha256Base64Url(verifier);
+  safeSessionSet(PKCE_STORAGE_KEY, JSON.stringify({ verifier, state }));
+  const params = new URLSearchParams({
+    client_id: COGNITO.clientId,
+    response_type: "code",
+    scope: "openid email profile",
+    redirect_uri: COGNITO.redirectUri || window.location.origin,
+    state,
+    code_challenge: challenge,
+    code_challenge_method: "S256"
+  });
+  authState.status = "loading";
+  updateProfileUI();
+  window.location.assign(`${buildCognitoBaseUrl()}/oauth2/authorize?${params.toString()}`);
+}
+
+async function exchangeCognitoCode(code, verifier) {
+  const tokenResponse = await fetch(`${buildCognitoBaseUrl()}/oauth2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: COGNITO.clientId,
+      code,
+      redirect_uri: COGNITO.redirectUri || window.location.origin,
+      code_verifier: verifier
+    })
+  });
+  const tokens = await tokenResponse.json();
+  if (!tokenResponse.ok) {
+    throw new Error(tokens.error_description || tokens.error || "Cognito sign-in failed");
+  }
+  return tokens;
+}
+
+async function handleCognitoRedirect() {
+  if (!COGNITO_ENABLED) return;
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  const error = params.get("error");
+  if (error) {
+    authState.status = "guest";
+    authState.error = params.get("error_description") || error;
+    updateProfileUI();
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+    return;
+  }
+  if (!code) return;
+
+  const stored = safeSessionGet(PKCE_STORAGE_KEY);
+  if (!stored) return;
+
+  let pkce = null;
+  try { pkce = JSON.parse(stored); } catch (parseError) {}
+  if (!pkce || pkce.state !== params.get("state")) return;
+
+  authState.status = "loading";
+  updateProfileUI();
+  try {
+    const tokens = await exchangeCognitoCode(code, pkce.verifier);
+    const claims = parseJwt(tokens.id_token);
+    if (!claims) throw new Error("Unable to read Cognito identity claims");
+    setCognitoIdentity(claims);
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+  } catch (signInError) {
+    authState.status = "guest";
+    authState.error = signInError.message;
+    setGuestIdentity();
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+  } finally {
+    safeSessionRemove(PKCE_STORAGE_KEY);
+  }
+}
+
+function signOut() {
+  setGuestIdentity();
+  if (!COGNITO_ENABLED) return;
+  const params = new URLSearchParams({
+    client_id: COGNITO.clientId,
+    logout_uri: COGNITO.logoutRedirectUri || COGNITO.redirectUri || window.location.origin
+  });
+  window.location.assign(`${buildCognitoBaseUrl()}/logout?${params.toString()}`);
+}
+
+void handleCognitoRedirect();
+
+function nowMs() {
+  return Math.round(performance.now());
+}
+
+function showArchitecture() {
+  if (archScreenEl) archScreenEl.classList.add("on");
+}
+
+function hideArchitecture() {
+  if (archScreenEl) archScreenEl.classList.remove("on");
+}
+
+function openArchitectureFromRoute() {
+  const params = new URLSearchParams(window.location.search);
+  const view = (params.get("view") || "").toLowerCase();
+  const hash = (window.location.hash || "").toLowerCase();
+  if (view === "story" || view === "architecture" || hash === "#story" || hash === "#architecture") {
+    showArchitecture();
+  }
+}
+
+openArchitectureFromRoute();
+
+function pushMatchEvent(type, details = {}) {
+  matchEvents.push({ type, atMs: nowMs() - matchStartTime, ...details });
+}
+
+function resolveAssetUrl(path) {
+  if (!ASSET_BASE) return "";
+  return `${ASSET_BASE.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+
 // ── Audio ──
-let audioCtx = null, muted = true;
+let audioCtx = null, muted = false;
+let audioPrimed = false;
 function getAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === "suspended") audioCtx.resume();
   return audioCtx;
+}
+function primeAudio() {
+  const ctx = getAudio();
+  if (audioPrimed) return;
+  // A tiny silent pulse helps unlock audio on mobile browsers after user interaction.
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  gain.gain.value = 0.0001;
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.02);
+  audioPrimed = true;
 }
 function mkNoise(ctx, dur) {
   const b = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
@@ -43,8 +421,49 @@ function mkNoise(ctx, dur) {
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   const s = ctx.createBufferSource(); s.buffer = b; return s;
 }
+function playAudioBuffer(buffer, gainValue = 0.35, playbackRate = 1) {
+  const ctx = getAudio(), t = ctx.currentTime, out = ctx.destination;
+  const src = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  src.buffer = buffer;
+  src.playbackRate.value = playbackRate;
+  gain.gain.setValueAtTime(gainValue, t);
+  const fadeDur = Math.max(0.15, Math.min(buffer.duration || 0.35, 1.2));
+  gain.gain.exponentialRampToValueAtTime(0.001, t + fadeDur);
+  src.connect(gain);
+  gain.connect(out);
+  src.start(t);
+}
+async function loadRemoteSounds() {
+  if (!ASSET_BASE || remoteSoundLoad) return remoteSoundLoad;
+  remoteSoundLoad = (async () => {
+    const decodeCtx = getAudio();
+    const soundMap = {
+      hit: "audio/hit.wav",
+      wall: "audio/wall.wav",
+      goal: "audio/goal.wav",
+      victory: "audio/victory.wav"
+    };
+    await Promise.all(Object.entries(soundMap).map(async ([key, assetPath]) => {
+      const url = resolveAssetUrl(assetPath);
+      if (!url) return;
+      try {
+        const response = await fetch(url, { mode: "cors" });
+        if (!response.ok) return;
+        const buffer = await response.arrayBuffer();
+        remoteSounds[key] = await decodeCtx.decodeAudioData(buffer.slice(0));
+      } catch (error) {}
+    }));
+  })();
+  return remoteSoundLoad;
+}
 function playSound(type, speed = 1) {
   if (muted) return;
+  if (remoteSounds[type]) {
+    const rate = type === "hit" ? Math.max(0.85, Math.min(speed / 10, 1.5)) : 1;
+    playAudioBuffer(remoteSounds[type], type === "victory" ? 0.45 : 0.35, rate);
+    return;
+  }
   const ctx = getAudio(), t = ctx.currentTime, out = ctx.destination;
   if (type === "hit") {
     const n = mkNoise(ctx, 0.07), bp = ctx.createBiquadFilter(), g = ctx.createGain();
@@ -58,7 +477,7 @@ function playSound(type, speed = 1) {
     g.gain.setValueAtTime(0.28, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
     n.connect(hp); hp.connect(g); g.connect(out); n.start(t); n.stop(t + 0.04);
   }
-  if (type === "goal") {
+  if (type === "goal" || type === "goal-cpu") {
     const sub = ctx.createOscillator(), sg = ctx.createGain();
     sub.type = "sine"; sub.frequency.setValueAtTime(60, t); sub.frequency.exponentialRampToValueAtTime(28, t + 0.25);
     sg.gain.setValueAtTime(0.6, t); sg.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
@@ -68,6 +487,18 @@ function playSound(type, speed = 1) {
       o.type = wv; o.frequency.value = f;
       g.gain.setValueAtTime(0.15, t + dt); g.gain.setValueAtTime(0.15, t + 0.5); g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
       o.connect(g); g.connect(out); o.start(t + dt); o.stop(t + 0.71);
+    });
+  }
+  if (type === "goal-player") {
+    [[0,523,0.14],[0.12,659,0.14],[0.24,784,0.24]].forEach(([dt,f,dur]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+      o.type = "triangle"; o.frequency.value = f;
+      lp.type = "lowpass"; lp.frequency.value = 2800;
+      g.gain.setValueAtTime(0.001, t + dt);
+      g.gain.linearRampToValueAtTime(0.16, t + dt + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dt + dur);
+      o.connect(lp); lp.connect(g); g.connect(out);
+      o.start(t + dt); o.stop(t + dt + dur + 0.01);
     });
   }
   if (type === "victory") {
@@ -89,7 +520,10 @@ function updateMuteLabel() { muteBtn.innerHTML = muted ? "PRESS S FOR SOUND" : "
 updateMuteLabel();
 function toggleMute() {
   muted = !muted;
-  if (!muted) getAudio().resume();
+  if (!muted) {
+    primeAudio();
+    void loadRemoteSounds();
+  }
   updateMuteLabel();
 }
 
@@ -172,6 +606,7 @@ function sparkLine(x1, y1, x2, y2, col, n = 8) {
 let rawX = CX, rawY = FY + FH - 120;
 let prevRawX = CX, prevRawY = FY + FH - 120;
 let mouseVX = 0, mouseVY = 0;
+let activePointerId = null;
 
 function pointerToCanvas(clientX, clientY) {
   const r = CV.getBoundingClientRect();
@@ -183,18 +618,46 @@ function pointerToCanvas(clientX, clientY) {
   rawY = clamp(ny, CY + 10, FY + FH - PLAYER_R - 2);
 }
 
-CV.addEventListener("mousemove", e => pointerToCanvas(e.clientX, e.clientY));
-document.addEventListener("mousemove", e => pointerToCanvas(e.clientX, e.clientY));
-CV.addEventListener("touchmove", e => { e.preventDefault(); pointerToCanvas(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
-CV.addEventListener("touchstart", e => { e.preventDefault(); pointerToCanvas(e.touches[0].clientX, e.touches[0].clientY); if (state === "title") startGame(); }, { passive: false });
-document.addEventListener("keydown", e => { if (e.code === "KeyS") toggleMute(); if (e.code === "Space" && state === "over") startGame(); });
+CV.addEventListener("pointermove", e => {
+  if (activePointerId !== null && e.pointerId !== activePointerId) return;
+  pointerToCanvas(e.clientX, e.clientY);
+});
+CV.addEventListener("pointerdown", e => {
+  activePointerId = e.pointerId;
+  if (CV.setPointerCapture) CV.setPointerCapture(e.pointerId);
+  pointerToCanvas(e.clientX, e.clientY);
+  primeAudio();
+  void loadRemoteSounds();
+  if (state === "title") startGame();
+});
+CV.addEventListener("pointerup", e => {
+  if (activePointerId === e.pointerId) activePointerId = null;
+});
+CV.addEventListener("pointercancel", e => {
+  if (activePointerId === e.pointerId) activePointerId = null;
+});
+document.addEventListener("keydown", e => {
+  if (e.code === "KeyS") toggleMute();
+  if (e.code === "Space" && state === "over") startGame();
+  if (e.code === "Space" || e.code === "Enter") {
+    primeAudio();
+    void loadRemoteSounds();
+  }
+});
 // ── Game flow ──
 function startGame() {
+  primeAudio();
+  void loadRemoteSounds();
   score.p = 0; score.cpu = 0; resetStats();
   ballSpeedMult = 1.0; lastSpeedUpAt = 0; speedUpMsg = ""; speedUpTimer = 0;
   sloMo = false; sloMoAlpha = 0; sloMoIntro = 0; sloMoLabelTimer = 0;
   confetti.length = 0;
   if (confettiInterval) { clearInterval(confettiInterval); confettiInterval = null; }
+  matchStartTime = performance.now();
+  matchEvents = [];
+  matchId = createMatchId();
+  leaderboardSent = false;
+  telemetrySent = false;
   resetRound("p");
   state = "play";
   if (readyEl) readyEl.classList.remove("on");
@@ -231,11 +694,14 @@ function goalScored(who) {
     lastSpeedUpAt = totalGoals; ballSpeedMult = Math.min(ballSpeedMult + 0.14, 2.0);
     const msgs = ["SPEEDING UP!","FASTER!!","NO MERCY!","LIGHT SPEED!","HOLD ON!!"];
     speedUpMsg = msgs[Math.min(Math.floor(totalGoals / 2 - 1), msgs.length - 1)]; speedUpTimer = 130;
+    pushMatchEvent("speed-up", { score: { p: score.p, cpu: score.cpu }, speedMultiplier: ballSpeedMult });
   }
+  pushMatchEvent("goal", { who, score: { p: score.p, cpu: score.cpu }, speedMultiplier: ballSpeedMult });
   if (who === "p") burst(CX, FY + FH, "#00d4ff", "#ffffff", 40);
   else burst(CX, FY, "#ff2d55", "#ffffff", 40);
   burst(ball.x, ball.y, "#ffc940", "#ffffff", 30);
-  shake(8); playSound("goal");
+  shake(8);
+  playSound(who === "p" ? "goal-player" : "goal-cpu");
   updateStatDOM();
   if ((score.p === MAX_SCORE - 1 || score.cpu === MAX_SCORE - 1) && !sloMo) {
     sloMo = true; sloMoIntro = 80; sloMoLabelTimer = 170;
@@ -248,7 +714,11 @@ function goalScored(who) {
       goWho.style.color = playerWon ? "#00d4ff" : "#ff2d55";
       goWho.style.textShadow = playerWon ? "0 0 30px #00d4ff" : "0 0 30px #ff2d55";
       goWinsEl.textContent = playerWon ? "GAME · SET · MATCH" : "BETTER LUCK NEXT TIME";
-      document.getElementById("go-face").textContent = playerWon ? "😄" : "😢";
+      const goFaceEl = document.getElementById("go-face");
+      if (goFaceEl) {
+        goFaceEl.classList.toggle("win", playerWon);
+        goFaceEl.classList.toggle("loss", !playerWon);
+      }
       goFinal.textContent = `${score.p} – ${score.cpu}`;
       gameoverEl.classList.remove("lose-state");
       if (!playerWon) gameoverEl.classList.add("lose-state");
@@ -258,8 +728,7 @@ function goalScored(who) {
         setTimeout(spawnConfetti, 400); setTimeout(spawnConfetti, 800); setTimeout(spawnConfetti, 1400);
         confettiInterval = setInterval(spawnConfetti, 1400);
       }
-            const name = prompt("Enter your name for the leaderboard:") || "Anonymous";
-      fetch(`${API_BASE}/leaderboard`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerName: name.slice(0,20), score: score.p, streak: stats.p.bestStreak, topSpeed: stats.p.topSpeed }) }).catch(()=>{});
+      void submitMatchReports(playerWon);
       gameoverEl.classList.add("on");
     } else {
       resetRound(who === "p" ? "cpu" : "p");
@@ -269,6 +738,64 @@ function goalScored(who) {
 }
 
 function shake(amt) { shakeAmt = Math.max(shakeAmt, amt); }
+
+function buildMatchSummary(playerWon) {
+  return {
+    profileId: profile.id,
+    profileName: profile.name,
+    sessionId,
+    matchId,
+    playerWon,
+    score: { p: score.p, cpu: score.cpu },
+    durationMs: nowMs() - matchStartTime,
+    ballSpeedMult,
+    streak: stats.p.bestStreak,
+    topSpeed: stats.p.topSpeed,
+    events: matchEvents,
+    cpuModel: {
+      speed: CPU_SPEED,
+      react: CPU_REACT,
+      errorX: CPU_ERROR_X,
+      mistakeChance: CPU_MISTAKE_CHANCE
+    }
+  };
+}
+
+async function submitLeaderboard() {
+  if (leaderboardSent) return;
+  leaderboardSent = true;
+  const payload = {
+    playerName: profile.name,
+    playerId: profile.id,
+    sessionId,
+    score: score.p,
+    streak: stats.p.bestStreak,
+    topSpeed: stats.p.topSpeed
+  };
+  await fetch(`${API_BASE}/leaderboard`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true
+  });
+}
+
+async function submitTelemetry(playerWon) {
+  if (telemetrySent) return;
+  telemetrySent = true;
+  await fetch(`${API_BASE}/telemetry`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildMatchSummary(playerWon)),
+    keepalive: true
+  });
+}
+
+async function submitMatchReports(playerWon) {
+  const tasks = [submitTelemetry(playerWon)];
+  if (playerWon) tasks.unshift(submitLeaderboard());
+  await Promise.allSettled(tasks);
+}
 
 function updateStatDOM() {
   DOM.scoreP.textContent   = score.p;
@@ -281,7 +808,7 @@ function updateStatDOM() {
   DOM.cpuPower.textContent  = stats.cpu.powerKicks;
 }
 
-// ── CPU AI (top half, defends top goal) ──
+// CPU Goalie on top half
 function updateCPU(ts = 1) {
   const homeY = FY + 120;
   const minX = FX + cpu.r + 2, maxX = FX + FW - cpu.r - 2;
@@ -317,7 +844,7 @@ function updateCPU(ts = 1) {
   cpu.vx = cpu.x - prevX; cpu.vy = cpu.y - prevY;
 }
 
-// ── Ball physics ──
+//  Ball movement
 function updateBall() {
   if (state !== "play") return;
   const spd = Math.hypot(ball.vx, ball.vy);
@@ -396,7 +923,7 @@ function updatePlayer(ts = 1) {
   player.pvx = mouseVX * ts; player.pvy = mouseVY * ts;
 }
 
-// ── Rendering ──
+// Rendering 
 function grd(x, y, r0, r1, c0, c1) { const g = G.createRadialGradient(x, y, r0, x, y, r1); g.addColorStop(0, c0); g.addColorStop(1, c1); return g; }
 function lgrad(x0, y0, x1, y1, stops) { const g = G.createLinearGradient(x0, y0, x1, y1); stops.forEach(([t, c]) => g.addColorStop(t, c)); return g; }
 
@@ -459,19 +986,19 @@ function drawPitch() {
   G.strokeStyle = "rgba(255,45,85,0.3)"; G.lineWidth = 1.5;
   G.beginPath(); G.moveTo(GOAL_X1, fy - GOAL_DEPTH); G.lineTo(GOAL_X2, fy - GOAL_DEPTH); G.stroke(); G.restore();
 
-  // Bottom goal (player, blue) — opening faces upward into field
+  // Bottom goal (player, blue) — draw inside field so it stays visible on mobile browsers
   G.save(); G.shadowColor = "#00d4ff"; G.shadowBlur = 14; G.strokeStyle = "rgba(0,212,255,0.7)"; G.lineWidth = 2.5;
-  G.beginPath(); G.moveTo(GOAL_X1, fy + fh); G.lineTo(GOAL_X1, fy + fh + GOAL_DEPTH); G.stroke();
-  G.beginPath(); G.moveTo(GOAL_X2, fy + fh); G.lineTo(GOAL_X2, fy + fh + GOAL_DEPTH); G.stroke();
+  G.beginPath(); G.moveTo(GOAL_X1, fy + fh); G.lineTo(GOAL_X1, fy + fh - GOAL_DEPTH); G.stroke();
+  G.beginPath(); G.moveTo(GOAL_X2, fy + fh); G.lineTo(GOAL_X2, fy + fh - GOAL_DEPTH); G.stroke();
   G.strokeStyle = "rgba(0,212,255,0.3)"; G.lineWidth = 1.5;
-  G.beginPath(); G.moveTo(GOAL_X1, fy + fh + GOAL_DEPTH); G.lineTo(GOAL_X2, fy + fh + GOAL_DEPTH); G.stroke(); G.restore();
+  G.beginPath(); G.moveTo(GOAL_X1, fy + fh - GOAL_DEPTH); G.lineTo(GOAL_X2, fy + fh - GOAL_DEPTH); G.stroke(); G.restore();
 
   // Goal posts
   [[GOAL_X1, fy],[GOAL_X2, fy]].forEach(([gx, gy]) => {
     G.save(); G.shadowColor = "#ff2d55"; G.shadowBlur = 12; G.fillStyle = "#ff2d55";
     G.beginPath(); G.arc(gx, gy, 5, 0, Math.PI * 2); G.fill(); G.restore();
   });
-  [[GOAL_X1, fy + FH],[GOAL_X2, fy + FH]].forEach(([gx, gy]) => {
+  [[GOAL_X1, fy + FH - 2],[GOAL_X2, fy + FH - 2]].forEach(([gx, gy]) => {
     G.save(); G.shadowColor = "#00d4ff"; G.shadowBlur = 12; G.fillStyle = "#00d4ff";
     G.beginPath(); G.arc(gx, gy, 5, 0, Math.PI * 2); G.fill(); G.restore();
   });
@@ -559,7 +1086,7 @@ function drawGoalFlash() {
   G.save(); G.globalAlpha = Math.min(1, prog * 3) * Math.min(1, goalFlash / 40);
   G.translate(W / 2, H / 2); G.scale(ease, ease); G.textAlign = "center";
   G.font = '900 56px "Orbitron"'; G.fillStyle = isP ? "#00d4ff" : "#ff2d55";
-  G.shadowColor = isP ? "#00d4ff" : "#ff2d55"; G.shadowBlur = 40; G.fillText("GOAL! ⚽", 0, -10); G.shadowBlur = 0;
+  G.shadowColor = isP ? "#00d4ff" : "#ff2d55"; G.shadowBlur = 40; G.fillText("GOAL //", 0, -10); G.shadowBlur = 0;
   G.font = '500 12px "Rajdhani"'; G.fillStyle = isP ? "rgba(0,212,255,0.75)" : "rgba(255,45,85,0.75)";
   G.fillText(isP ? "YOU SCORE" : "CPU SCORES", 0, 22); G.restore();
   goalFlash--;
@@ -602,7 +1129,7 @@ function updateBallScaled(ts) {
   }
 }
 
-// ── Utilities ──
+// Utilities 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function darken(hex, amt) {
   const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
@@ -613,7 +1140,7 @@ function lighten(hex, amt) {
   return `rgb(${clamp((r+amt*255)|0,0,255)},${clamp((g+amt*255)|0,0,255)},${clamp((b+amt*255)|0,0,255)})`;
 }
 
-// ── Main Loop ──
+// Main Loop 
 function loop() {
   tick++;
   G.clearRect(0, 0, W, H); G.fillStyle = "#04060a"; G.fillRect(0, 0, W, H);

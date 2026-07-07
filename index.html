@@ -41,6 +41,7 @@
 
       <div id="arena">
         <canvas id="c"></canvas>
+        <a id="exit-link" href="https://app.joesparkman.com/" aria-label="Exit game">EXIT</a>
         <div id="mute-btn"></div>
         <div id="ui">
           <div id="ready-screen" class="screen on">
@@ -48,12 +49,67 @@
               <div class="ready-logo">FIFA<span>NEON</span></div>
               <div class="ready-sub">SOCCER</div>
               <div class="ready-prompt">TAP TO KICK OFF</div>
+              <div class="ready-profile">
+                <div class="ready-profile-label">CLOUD PROFILE</div>
+                <div class="ready-profile-row">
+                  <span id="profile-name">Guest</span>
+                  <button id="profile-btn" type="button">EDIT</button>
+                </div>
+                <div class="ready-profile-row ready-auth-row">
+                  <span id="auth-state">Cognito · guest mode</span>
+                  <button id="auth-btn" type="button">SIGN IN WITH AWS</button>
+                </div>
+                <div class="ready-profile-state" id="profile-state">Guest profile · cloud assets fallback</div>
+              </div>
+              <div class="ready-actions">
+                <button id="arch-btn" type="button">ARCHITECTURE & STORY</button>
+              </div>
               <div class="ready-keys">DRAG YOUR PLAYER · SCORE 7 TO WIN</div>
+            </div>
+          </div>
+          <div id="arch-screen" class="screen">
+            <div class="arch-inner">
+              <div class="arch-title">BUILD STORY</div>
+              <div class="arch-sub">FIFA NEON SOCCER ON AWS</div>
+
+              <div class="arch-grid">
+                <div class="arch-card">
+                  <div class="arch-card-title">Challenge</div>
+                  <p>Ship an arcade-feel web game that stays responsive under touch input while adding production cloud features: auth, persistence, metrics, and CDN delivery.</p>
+                </div>
+                <div class="arch-card">
+                  <div class="arch-card-title">System Design</div>
+                  <p>Canvas game loop runs in-browser. Cognito handles identity. API Gateway + Lambda expose score and telemetry endpoints. DynamoDB stores leaderboard/events. S3 + CloudFront serve global static assets.</p>
+                </div>
+                <div class="arch-card">
+                  <div class="arch-card-title">Product Impact</div>
+                  <p>Players can sign in, post scores, and see live leaderboard behavior. Telemetry captures gameplay signals used to tune feel and balance without changing the core loop.</p>
+                </div>
+                <div class="arch-card">
+                  <div class="arch-card-title">Key Tradeoff</div>
+                  <p>Latency-sensitive logic remains client-side for instant controls. Cloud services own durability and observability. This split keeps gameplay snappy while preserving production reliability.</p>
+                </div>
+              </div>
+
+              <div class="arch-flow" aria-label="Architecture flow">
+                <span>Browser</span>
+                <span>API Gateway</span>
+                <span>Lambda</span>
+                <span>DynamoDB</span>
+              </div>
+
+              <div class="arch-link-row">
+                <a class="arch-link-btn" href="architecture-diagram.html" target="_blank" rel="noopener">OPEN VISUAL DIAGRAM</a>
+              </div>
+
+              <div class="arch-actions">
+                <button id="arch-close" type="button" onclick="document.getElementById('arch-screen') && document.getElementById('arch-screen').classList.remove('on');">CLOSE STORY</button>
+              </div>
             </div>
           </div>
           <div id="gameover-screen" class="screen">
             <div class="go-inner">
-              <div class="go-face" id="go-face">😄</div>
+              <div class="go-face win" id="go-face" aria-hidden="true"></div>
               <div class="go-who" id="go-who">YOU WIN</div>
               <div class="go-wins" id="go-wins">GAME · SET · MATCH</div>
               <div class="go-final" id="go-final">7 – 3</div>
@@ -71,6 +127,15 @@
 
     </div>
   </div>
+  <script>
+    window.APP_ASSET_BASE = "https://di4zvsdtqam4q.cloudfront.net";
+    window.APP_COGNITO = {
+      domain: "https://fifa-neon-196403805571-us-east-1.auth.us-east-1.amazoncognito.com",
+      clientId: "74fn8e84ub07au665l11fut7fm",
+      redirectUri: window.location.origin,
+      logoutRedirectUri: window.location.origin
+    };
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@
 
 html, body {
   background: var(--bg);
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -26,7 +26,9 @@ html, body {
   justify-content: center;
   align-items: center;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* 9:16 portrait outer container */
@@ -41,11 +43,11 @@ html, body {
 
 @media (max-height: 844px), (max-width: 390px) {
   #outer {
-    transform: scale(min(calc(100vw / 390), calc(100vh / 844)));
+    transform: scale(min(calc(100vw / 390), calc(100dvh / 844)));
   }
 }
 
-/* ── Top scoreboard ── */
+/* Top scoreboard */
 #stat-top {
   display: flex;
   flex-direction: row;
@@ -54,7 +56,7 @@ html, body {
   background: var(--panel);
   border: 1px solid rgba(255,255,255,0.05);
   border-radius: 16px 16px 0 0;
-  padding: 12px 20px 10px;
+  padding: 16px 20px 12px;
   border-bottom: none;
 }
 
@@ -69,7 +71,12 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.stat-center .stat-label {
+  line-height: 1.2;
 }
 
 .stat-divider-v {
@@ -106,7 +113,7 @@ canvas {
   box-shadow: 0 0 0 2px rgba(0,212,255,0.2), 0 0 50px rgba(0,212,255,0.1);
 }
 
-/* ── Bottom stats ── */
+/* Bottom stats */
 #stat-bottom {
   background: var(--panel);
   border: 1px solid rgba(255,255,255,0.05);
@@ -141,7 +148,7 @@ canvas {
   font-size: 12px;
 }
 
-/* ── Overlay Screens ── */
+/*  Overlay Screens */
 #ui {
   position: absolute;
   inset: 0;
@@ -167,7 +174,7 @@ canvas {
   pointer-events: all;
 }
 
-/* ── Ready screen ── */
+/*  Ready screen */
 .ready-inner { text-align: center; }
 
 .ready-logo {
@@ -201,6 +208,98 @@ canvas {
   animation: pulse 1.4s ease-in-out infinite;
 }
 
+.ready-profile {
+  margin: 18px auto 0;
+  padding: 12px 14px 14px;
+  width: min(280px, 84vw);
+  border: 1px solid rgba(0,212,255,0.22);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(8,13,20,0.85), rgba(4,6,10,0.92));
+  box-shadow: 0 0 20px rgba(0,212,255,0.08);
+}
+
+.ready-profile-label {
+  font-family: "Rajdhani", sans-serif;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: rgba(255,255,255,0.35);
+  margin-bottom: 8px;
+}
+
+.ready-profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ready-auth-row {
+  margin-top: 8px;
+}
+
+#profile-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 12px rgba(255,255,255,0.2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#profile-btn {
+  padding: 8px 14px;
+  border-width: 1px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--gold);
+  border-color: rgba(255,201,64,0.6);
+  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+}
+
+#profile-btn:hover, #profile-btn:active {
+  background: var(--gold);
+  color: #000;
+  box-shadow: 0 0 22px rgba(255,201,64,0.35);
+}
+
+#auth-state {
+  font-family: "Rajdhani", sans-serif;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  color: rgba(255,255,255,0.32);
+}
+
+#auth-btn {
+  padding: 8px 14px;
+  border-width: 1px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--blue);
+  border-color: rgba(0,212,255,0.6);
+  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+}
+
+#auth-btn:hover, #auth-btn:active {
+  background: var(--blue);
+  color: #000;
+  box-shadow: 0 0 22px rgba(0,212,255,0.35);
+}
+
+#auth-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.ready-profile-state {
+  margin-top: 8px;
+  font-family: "Rajdhani", sans-serif;
+  font-size: 11px;
+  letter-spacing: 1.8px;
+  color: rgba(255,255,255,0.28);
+}
+
 .ready-keys {
   margin-top: 18px;
   font-family: "Rajdhani", sans-serif;
@@ -210,13 +309,219 @@ canvas {
   color: rgba(255,255,255,0.22);
 }
 
-/* ── Game Over screen ── */
-.go-face {
-  font-size: 60px;
-  line-height: 1;
+.ready-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+#arch-btn {
+  padding: 10px 16px;
+  border-width: 1px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #8ff3ff;
+  border-color: rgba(143,243,255,0.6);
+  background: rgba(9,20,28,0.7);
+}
+
+#arch-btn:hover, #arch-btn:active {
+  background: rgba(143,243,255,0.18);
+  color: #fff;
+  box-shadow: 0 0 18px rgba(143,243,255,0.38);
+}
+
+#arch-screen {
+  background: rgba(4,6,10,0.8);
+}
+
+.arch-inner {
+  width: min(368px, 94vw);
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  border: 1px solid rgba(143,243,255,0.28);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(8,13,20,0.95), rgba(4,6,10,0.96));
+  box-shadow: 0 0 28px rgba(0,212,255,0.15);
+  padding: 18px 16px 20px;
+}
+
+.arch-title {
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #fff;
+  text-align: center;
+}
+
+.arch-sub {
+  margin-top: 4px;
+  margin-bottom: 14px;
+  text-align: center;
+  font-family: "Rajdhani", sans-serif;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  color: rgba(255,255,255,0.6);
+}
+
+.arch-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.arch-card {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 10px;
+  background: rgba(10,16,24,0.75);
+  padding: 12px;
+}
+
+.arch-card-title {
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  color: #8ff3ff;
   margin-bottom: 8px;
-  display: block;
+}
+
+.arch-card p {
+  margin: 0;
+  font-family: "Rajdhani", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: rgba(255,255,255,0.78);
+}
+
+.arch-flow {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+
+.arch-flow span {
+  text-align: center;
+  font-family: "Rajdhani", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.8px;
+  color: rgba(255,255,255,0.82);
+  border: 1px solid rgba(0,212,255,0.22);
+  border-radius: 8px;
+  padding: 8px 4px;
+  background: rgba(0,212,255,0.08);
+}
+
+.arch-link-row {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.arch-link-btn {
+  display: inline-block;
+  padding: 9px 14px;
+  border: 1px solid rgba(143,243,255,0.5);
+  border-radius: 8px;
+  font-family: "Orbitron", monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #8ff3ff;
+  text-decoration: none;
+  background: rgba(8,18,24,0.75);
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.arch-link-btn:hover, .arch-link-btn:active {
+  background: rgba(143,243,255,0.2);
+  color: #fff;
+  box-shadow: 0 0 18px rgba(143,243,255,0.3);
+}
+
+.arch-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+#arch-close {
+  padding: 10px 18px;
+  border-width: 1px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--gold);
+  border-color: rgba(255,201,64,0.6);
+}
+
+#arch-close:hover, #arch-close:active {
+  background: var(--gold);
+  color: #000;
+  box-shadow: 0 0 22px rgba(255,201,64,0.35);
+}
+
+/*  Game Over screen */
+.go-face {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 3px solid currentColor;
+  position: relative;
+  margin-bottom: 8px;
+  display: inline-block;
   animation: facePop 0.5s cubic-bezier(0.36,0.07,0.19,0.97) both;
+}
+
+.go-face::before,
+.go-face::after {
+  content: "";
+  position: absolute;
+  border-radius: 2px;
+}
+
+.go-face.win {
+  color: var(--blue);
+  box-shadow: 0 0 22px rgba(0,212,255,0.35);
+}
+
+.go-face.win::before {
+  left: 16px;
+  top: 33px;
+  width: 13px;
+  height: 3px;
+  background: currentColor;
+  transform: rotate(42deg);
+}
+
+.go-face.win::after {
+  left: 24px;
+  top: 28px;
+  width: 26px;
+  height: 3px;
+  background: currentColor;
+  transform: rotate(-46deg);
+}
+
+.go-face.loss {
+  color: var(--red);
+  box-shadow: 0 0 22px rgba(255,45,85,0.35);
+}
+
+.go-face.loss::before {
+  left: 17px;
+  top: 31px;
+  width: 34px;
+  height: 3px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.go-face.loss::after {
+  left: 17px;
+  top: 31px;
+  width: 34px;
+  height: 3px;
+  background: currentColor;
+  transform: rotate(-45deg);
 }
 
 @keyframes facePop {
@@ -272,7 +577,7 @@ button:hover, button:active {
 
 #mute-btn {
   position: absolute;
-  bottom: 10px;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   right: 12px;
   font-family: "Rajdhani", sans-serif;
   font-size: 9px;
@@ -280,6 +585,29 @@ button:hover, button:active {
   color: rgba(255,255,255,0.18);
   cursor: pointer;
   pointer-events: all;
+}
+
+#exit-link {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 20;
+  padding: 5px 8px;
+  border: 1px solid rgba(0,212,255,0.42);
+  border-radius: 7px;
+  color: rgba(143,243,255,0.9);
+  background: rgba(6,14,22,0.62);
+  text-decoration: none;
+  font-family: "Rajdhani", sans-serif;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  pointer-events: all;
+}
+
+#exit-link:hover, #exit-link:active {
+  background: rgba(0,212,255,0.18);
+  color: #fff;
+  box-shadow: 0 0 14px rgba(0,212,255,0.25);
 }
 
 @keyframes pulse {

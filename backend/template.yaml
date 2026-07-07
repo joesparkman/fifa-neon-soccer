@@ -9,6 +9,50 @@ Globals:
 
 Resources:
 
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: fifa-neon-soccer-users
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: fifa-neon-soccer-spa
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      CallbackURLs:
+        - http://localhost:5500
+        - https://app.joesparkman.com
+      LogoutURLs:
+        - http://localhost:5500
+        - https://app.joesparkman.com
+      SupportedIdentityProviders:
+        - COGNITO
+
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub fifa-neon-${AWS::AccountId}-${AWS::Region}
+      UserPoolId: !Ref CognitoUserPool
+
   LeaderboardTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -25,6 +69,96 @@ Resources:
         - AttributeName: sk
           KeyType: RANGE
 
+  TelemetryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: FifaGameTelemetry
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+
+  AssetBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub fifa-neon-assets-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  AssetOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: fifa-neon-assets-oac
+        Description: Access control for FIFA Neon Soccer assets
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  AssetDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: FIFA Neon Soccer asset distribution
+        DefaultRootObject: index.html
+        Origins:
+          - Id: AssetBucketOrigin
+            DomainName: !GetAtt AssetBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt AssetOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: AssetBucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: none
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+  AssetBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AssetBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${AssetBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${AssetDistribution}"
+
   LeaderboardFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -34,6 +168,13 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref LeaderboardTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TelemetryTable
+      Environment:
+        Variables:
+          LEADERBOARD_TABLE: !Ref LeaderboardTable
+          TELEMETRY_TABLE: !Ref TelemetryTable
+          ALLOWED_ORIGINS: "http://localhost:5500,https://app.joesparkman.com"
       Events:
         GetLeaderboard:
           Type: Api
@@ -45,13 +186,40 @@ Resources:
           Properties:
             Path: /leaderboard
             Method: POST
+        GetTelemetry:
+          Type: Api
+          Properties:
+            Path: /telemetry
+            Method: GET
+        PostTelemetry:
+          Type: Api
+          Properties:
+            Path: /telemetry
+            Method: POST
         Options:
           Type: Api
           Properties:
             Path: /leaderboard
+            Method: OPTIONS
+        TelemetryOptions:
+          Type: Api
+          Properties:
+            Path: /telemetry
             Method: OPTIONS
 
 Outputs:
   ApiUrl:
     Description: Paste this into app.js as API_BASE
     Value: !Sub "https://${ServerlessRestApi}.execute-api.us-east-1.amazonaws.com/Prod"
+  AssetBaseUrl:
+    Description: CloudFront base URL for optional asset hosting
+    Value: !Sub "https://${AssetDistribution.DomainName}"
+  CognitoUserPoolId:
+    Description: Cognito user pool for Hosted UI sign-in
+    Value: !Ref CognitoUserPool
+  CognitoUserPoolClientId:
+    Description: Cognito SPA client id
+    Value: !Ref CognitoUserPoolClient
+  CognitoHostedUiDomain:
+    Description: Cognito Hosted UI base URL
+    Value: !Sub "https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
