@@ -8,3 +8,5 @@ backend/.aws-sam/
 # OS
 .DS_Store
 Thumbs.db
+backend/terraform/.terraform/
+backend/terraform/lambda.zip
