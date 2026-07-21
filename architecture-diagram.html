@@ -216,7 +216,18 @@
         </div>
       </article>
 
-      <p class="board-note">Protected endpoints use Cognito JWT bearer tokens. CloudFront + S3 handle static delivery while API Gateway + Lambda process gameplay requests and persist leaderboard state.</p>
+      <article class="lane">
+        <p class="lane-title">Infrastructure as Code</p>
+        <div class="lane-grid">
+          <div class="node purple">Terraform<small>Provisions all AWS resources from HCL config</small></div>
+          <div class="flow">→</div>
+          <div class="node purple">S3 Remote State<small>fifa-neon-tfstate bucket stores tfstate</small></div>
+          <div class="flow">→</div>
+          <div class="node purple">GitHub Actions CI/CD<small>terraform plan on PR · apply on push to main</small></div>
+        </div>
+      </article>
+
+      <p class="board-note">Protected endpoints use Cognito JWT bearer tokens. CloudFront + S3 handle static delivery while API Gateway + Lambda process gameplay requests and persist leaderboard state. All infrastructure is provisioned and versioned via Terraform with automated CI/CD.</p>
     </section>
 
     <section class="legend">
@@ -226,6 +237,7 @@
       <article class="legend-item"><strong>Data layer:</strong> DynamoDB stores leaderboard entries and player-linked telemetry records.</article>
       <article class="legend-item"><strong>Security posture:</strong> Tokens and IAM controls protect write operations and keep privileged logic server-side.</article>
       <article class="legend-item"><strong>Scalability:</strong> Serverless components scale with traffic spikes during gameplay and events.</article>
+      <article class="legend-item"><strong>IaC layer:</strong> Terraform manages all AWS resources with remote state in S3 and automated deploys via GitHub Actions.</article>
     </section>
 
     <div class="actions">
